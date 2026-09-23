@@ -15,11 +15,34 @@ class _LoginScreenState extends State<LoginScreen> {
   //1.1 Crear el cerebro de la animacion
   StateMachineController? _controller;
   //SMT: State Machine Input / Entrada de maquina de estado
-  SMIInput? _isChecking;
-  SMIInput? _isHandsUp;
-  SMIInput? _trigSuccess;
-  SMIInput? _trigFail;
+  SMIBool? _isChecking;
+  SMIBool? _isHandsUp;
+  SMITrigger? _trigSuccess;
+  SMITrigger? _trigFail;
 
+  //2.1 Crear las variables para FocusNode
+  final _emailFocus = FocusNode(); //Se llama node por un foco de cosas que puede hacer
+  final _passWordFocus = FocusNode();
+
+  //2.2 Listeners (Oyentes/chismosos) para saber cuando el usuario esta escribiendo en el campo de texto
+  @override
+  void initState() {
+  super.initState();
+    super.initState();
+    _emailFocus.addListener((){
+      if (_emailFocus.hasFocus) {
+        //Verificar que no sea nulo
+        if (_isHandsUp != null) {
+          //Manos abajo en el email
+          _isHandsUp!.change(false);
+        }
+      }
+    });
+    _passWordFocus.addListener((){
+      //Manos arriba en el password
+      _isHandsUp!.change(_passWordFocus.hasFocus);
+    });
+  }
   @override
   Widget build(BuildContext context) {
     //Para obtener el tamaño de la pantalla
@@ -34,7 +57,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: size.width,
                 height: 200,
                 child: RiveAnimation.asset(
-                  'login-bear.riv',
+                  'assets/login-bear.riv',
                   stateMachines: ['Login Machine'],
                 //1.2 Vincular Animacion
                 onInit: (artboard) {
@@ -58,10 +81,11 @@ class _LoginScreenState extends State<LoginScreen> {
               SizedBox(height: 10),
               //Campo de texto para el correo
               TextField(
+                focusNode: _emailFocus,
                 onChanged: (value){
                   if (_isHandsUp != null) {
                     //No tapes los ojos al ver email
-                    _isHandsUp!.change(false);
+                    //_isHandsUp!.change(false);
                   }
                   //Si isChecking no es nulo, cambiar el valor de la variable
                   if (_isChecking != null) {
@@ -83,6 +107,8 @@ class _LoginScreenState extends State<LoginScreen> {
               SizedBox(height: 10),
               //Campo de texto para la contraseña
               TextField(
+                //2.3 Asigna el foco al campo de texto
+                  focusNode: _passWordFocus,
                   onChanged: (value){
                   if (_isChecking != null) {
                     //No tapes los ojos al ver email
@@ -123,5 +149,12 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       );
+  }
+  @override
+  void dispose() {
+    //2.4 Liberar memoria al salir de la pantalla para liberar el foco
+    _emailFocus.dispose();
+    _passWordFocus.dispose();
+    super.dispose();
   }
 }
