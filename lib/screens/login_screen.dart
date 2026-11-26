@@ -1,6 +1,11 @@
+
 import 'package:flutter/material.dart';
 import 'package:rive/rive.dart';
-import 'dart:async'; //3.1 Importar el timer
+import 'dart:async';
+
+//5.1 Firebase Auth y pantalla de productos
+import 'package:firebase_auth/firebase_auth.dart';
+import 'products_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,51 +18,53 @@ class _LoginScreenState extends State<LoginScreen> {
   //Control para mostrar u ocultar la contraseña
   bool _obscure = true;
 
-  //5.1 remember me efecto visual
+  //5.1 Remember me
   bool _rememberMe = false;
 
-  //5.2 el anti spam
+  //5.2 Evitar múltiples intentos de login
   bool _isBusy = false;
 
-  //5.3 Timer de RESPALDO
-  Timer? _lockTimer;
-  static const Duration _fallbackLock = Duration(seconds: 6);
+  //5.2.1 Indicador de carga
 
-  //5.4 Nombres de estados
+  //5.4 Nombres de estados de Rive
   static const String _successState = 'success';
   static const String _failState = 'fail';
   static const String _idleState = 'idle';
 
-  //5.4.1 indica si ya vimos pasar el estado de exito
+  //5.4.1 Indica si ya vimos pasar el estado de éxito
   bool _sawResultState = false;
 
-  //1.1 Crear el cerebro de la animacion
+  //1.1 Controlador de la animación
   StateMachineController? _controller;
-  //SMT: State Machine Input / Entrada de maquina de estado
+
+  //SMT: State Machine Input
   SMIBool? _isChecking;
   SMIBool? _isHandsUp;
   SMITrigger? _trigSuccess;
   SMITrigger? _trigFail;
 
-  //3.2 Variable del reccorido de la mirada
+  //3.2 Variable del recorrido de la mirada
   SMINumber? _numLook;
 
-  //3.3 Timer para detener la mirada al dejar de escribir
+  //3.3 Timer para detener la mirada
   Timer? _typingDebounce;
 
-  //2.1 Crear las variables para FocusNode
+  //2.1 FocusNodes
   final _emailFocus = FocusNode();
   final _passWordFocus = FocusNode();
 
-  //4.1 Controllers que manipulan lo que el usuario escribe
+  //4.1 Controllers
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
 
-  //4.2 Errores para mostarlo en la UI(pantalla)
+  //4.2 Errores para mostrarlos en la UI
   String? emailError;
   String? passError;
 
-  //4.3 Validar el email y la contraseña
+   //5.2 Variable para mostrar el CircularProgressIndicator mientras carga
+  bool _isLoading = false;
+  
+  //4.3 Validar email y contraseña
   bool isValidEmail(String email) {
     final re = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
     return re.hasMatch(email);
@@ -70,31 +77,30 @@ class _LoginScreenState extends State<LoginScreen> {
     return re.hasMatch(pass);
   }
 
-  //5.13 Rive nos avisa cada vez que la maquina de estados cambia de estado
+  //5.4.1 Escuchar los cambios de estado de Rive
   void _onRiveStateChange(String machineName, String stateName) {
-    //Imprime los nombres reales para ajustar las constantes de arriba
-    debugPrint('Rive -> maquina: $machineName | estado: $stateName');
+    debugPrint(
+      'Rive -> maquina: $machineName | estado: $stateName',
+    );
 
     if (!mounted || !_isBusy) return;
 
     final name = stateName.toLowerCase();
 
-    //la animacion llego al estado de exito o fallo
     if (name == _successState || name == _failState) {
       _sawResultState = true;
       return;
     }
 
-    //regreso al reposo osea el desbloquear
     if (_sawResultState && name == _idleState) {
-      _lockTimer?.cancel();
-      setState(() => _isBusy = false);
+      debugPrint('Rive regreso al estado idle');
     }
   }
 
-  //4.4 Dar accion al boton de login
-  void _onLogin() {
-    //5.5 Si ya hay una animacion en curso, ignorar el click
+  //4.4 Dar acción al botón de login
+  //5.3 Convertir el método en asíncrono
+  Future<void> _onLogin() async {
+    //Evitar múltiples intentos
     if (_isBusy) return;
 
     final email = _emailCtrl.text.trim();
@@ -103,57 +109,111 @@ class _LoginScreenState extends State<LoginScreen> {
     final eError = isValidEmail(email) ? null : 'Invalid Email';
     final pError = isValidPassword(pass) ? null : 'Invalid Password';
 
-    //4.7 Avisar que hubo cambios + 5.6 bloquear la UI
     setState(() {
       emailError = eError;
       passError = pError;
+    });
+
+    //4.9 Si algún campo tiene formato inválido
+    if (eError != null || pError != null) {
+      _trigFail?.fire();
+      return;
+    }
+
+    //Cerrar teclado y preparar animación
+    FocusScope.of(context).unfocus();
+    _typingDebounce?.cancel();
+
+    _isChecking?.change(false);
+    _isHandsUp?.change(false);
+    _numLook?.value = 50.0;
+
+    //5.4 Activar indicador de carga
+    setState(() {
       _isBusy = true;
+      _isLoading = true;
       _sawResultState = false;
     });
 
-    //4.8 Cerrar el teclado y bajar las manos del osito
-    FocusScope.of(context).unfocus();
-    _typingDebounce?.cancel();
-    _isChecking?.change(false);
-    _isHandsUp?.change(false);
-    _numLook?.value = 50.0; //Mirada neutra
+    try {
+      //5.5 Autenticar usuario con Firebase
+      //Espera temporal para visualizar el indicador
+      await Future.delayed(const Duration(seconds: 2));
 
-    //4.9 Activar triggers
-    if (eError == null && pError == null) {
-      _trigSuccess?.fire();
-    } else {
-      _trigFail?.fire();
-    }
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: pass,
+      );
 
-    //5.7 Respaldo: si Rive no avisa, desbloquear despues de _fallbackLock
-    _lockTimer?.cancel();
-    _lockTimer = Timer(_fallbackLock, () {
       if (!mounted) return;
-      setState(() => _isBusy = false);
+
+      //Autenticación exitosa
+      _trigSuccess?.fire();
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ProductsScreen(),
+        ),
+      );
+
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+
+      //Autenticación fallida
+      _trigFail?.fire();
+
+      setState(() {
+        passError = 'Invalid email or password';
+      });
+
+      debugPrint('Firebase Auth Error: ${e.code}');
+
+    } catch (e) {
+      if (!mounted) return;
+
+      _trigFail?.fire();
+
+      setState(() {
+        passError = 'An unexpected error occurred';
+      });
+
+      debugPrint('Login Error: $e');
+
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isBusy = false;
+        });
+      }
+    }
+  }
+
+  //5.8 Cambiar estado de Remember me
+  void _toggleRemember(bool? value) {
+    if (_isBusy) return;
+
+    setState(() {
+      _rememberMe = value ?? !_rememberMe;
     });
   }
 
-  //5.8 Cambiar el estado de Remember me
-  void _toggleRemember(bool? value) {
-    if (_isBusy) return;
-    setState(() => _rememberMe = value ?? !_rememberMe);
-  }
-
-  //2.2 Listeners para saber cuando el usuario esta escribiendo
+  //2.2 Listeners para saber cuándo el usuario está escribiendo
   @override
   void initState() {
     super.initState();
+
     _emailFocus.addListener(() {
       if (_emailFocus.hasFocus) {
         if (_isHandsUp != null) {
           _isHandsUp!.change(false);
-          //3.4 Mirada neutra
           _numLook?.value = 50.0;
         }
       }
     });
+
     _passWordFocus.addListener(() {
-      //Manos arriba en el password (con ? por si la animacion aun no carga)
       _isHandsUp?.change(_passWordFocus.hasFocus);
     });
   }
@@ -161,12 +221,14 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final Size size = MediaQuery.of(context).size;
+
     return Scaffold(
       body: SingleChildScrollView(
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            //5.9 AbsorbPointer bloquea todos los toques mientras _isBusy sea true
+
+            //Bloquear toques mientras se procesa el login
             child: AbsorbPointer(
               absorbing: _isBusy,
               child: Column(
@@ -177,52 +239,68 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: RiveAnimation.asset(
                       'assets/login-bear.riv',
                       stateMachines: const ['Login Machine'],
-                      //1.2 Vincular Animacion
+
+                      //1.2 Vincular animación
                       onInit: (artboard) {
-                        _controller = StateMachineController.fromArtboard(
+                        _controller =
+                            StateMachineController.fromArtboard(
                           artboard,
                           'Login Machine',
-                          //5.14 Escuchar los cambios de estado de la animacion
                           onStateChange: _onRiveStateChange,
                         );
 
-                        //1.3 Verificar que el controlador no sea nulo
+                        //1.3 Verificar controlador
                         if (_controller == null) return;
+
                         artboard.addController(_controller!);
-                        //Vinculamos variables
+
+                        //Vincular variables
                         _isChecking =
                             _controller?.findSMI<SMIBool>('isChecking');
-                        _isHandsUp = _controller?.findSMI<SMIBool>('isHandsUp');
+
+                        _isHandsUp =
+                            _controller?.findSMI<SMIBool>('isHandsUp');
+
                         _trigSuccess =
                             _controller?.findSMI<SMITrigger>('trigSuccess');
+
                         _trigFail =
                             _controller?.findSMI<SMITrigger>('trigFail');
+
                         //3.5 Vincular numLook
-                        _numLook = _controller?.findSMI<SMINumber>('numLook');
+                        _numLook =
+                            _controller?.findSMI<SMINumber>('numLook');
                       },
                     ),
                   ),
+
                   const SizedBox(height: 10),
-                  //Campo de texto para el correo
+
+                  //Campo de correo
                   TextField(
                     controller: _emailCtrl,
                     focusNode: _emailFocus,
                     onChanged: (value) {
                       if (_isChecking != null) {
-                        //Activar modo chismoso
                         _isChecking!.change(true);
 
-                        //3.6 Implementar numLook (0 a 100, 80 = calibracion)
+                        //3.6 Movimiento de la mirada
                         final look =
-                            (value.length / 80.0 * 100.0).clamp(0.0, 100.0);
+                            (value.length / 80.0 * 100.0)
+                                .clamp(0.0, 100.0);
+
                         _numLook?.value = look;
 
-                        //3.7 Debounce: si vuelve a teclear, reinicia el contador
+                        //3.7 Debounce
                         _typingDebounce?.cancel();
-                        _typingDebounce = Timer(const Duration(seconds: 3), () {
-                          if (!mounted) return;
-                          _isChecking?.change(false);
-                        });
+
+                        _typingDebounce = Timer(
+                          const Duration(seconds: 3),
+                          () {
+                            if (!mounted) return;
+                            _isChecking?.change(false);
+                          },
+                        );
                       }
                     },
                     keyboardType: TextInputType.emailAddress,
@@ -235,8 +313,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
+
                   const SizedBox(height: 10),
-                  //Campo de texto para la contraseña
+
+                  //Campo de contraseña
                   TextField(
                     controller: _passCtrl,
                     focusNode: _passWordFocus,
@@ -251,7 +331,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       prefixIcon: const Icon(Icons.lock),
                       suffixIcon: IconButton(
                         icon: Icon(
-                          _obscure ? Icons.visibility : Icons.visibility_off,
+                          _obscure
+                              ? Icons.visibility
+                              : Icons.visibility_off,
                         ),
                         onPressed: () {
                           setState(() {
@@ -264,8 +346,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
+
                   const SizedBox(height: 10),
-                  //5.10 Fila: Remember me (izquierda) + Forgot Password (derecha)
+
+                  //5.10 Remember me y Forgot Password
                   Row(
                     children: [
                       InkWell(
@@ -287,32 +371,48 @@ class _LoginScreenState extends State<LoginScreen> {
                           ],
                         ),
                       ),
+
                       const Spacer(),
+
                       const Text(
                         'Forgot Password?',
-                        style: TextStyle(decoration: TextDecoration.underline),
+                        style: TextStyle(
+                          decoration: TextDecoration.underline,
+                        ),
                       ),
                     ],
                   ),
+
                   const SizedBox(height: 10),
-                  //4.13 boton de login
+
+                  //5.6 Botón con CircularProgressIndicator
                   MaterialButton(
                     minWidth: size.width,
                     height: 50,
                     color: Colors.pinkAccent,
-                    //5.11 Look de deshabilitado mientras corre la animacion
                     disabledColor: Colors.pinkAccent.withOpacity(0.5),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    //null = boton deshabilitado
                     onPressed: _isBusy ? null : _onLogin,
-                    child: const Text(
-                      'Login',
-                      style: TextStyle(color: Colors.white),
-                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 25,
+                            width: 25,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2.5,
+                            ),
+                          )
+                        : const Text(
+                            'Login',
+                            style: TextStyle(color: Colors.white),
+                          ),
                   ),
+
+                  
                   const SizedBox(height: 10),
+
                   SizedBox(
                     width: size.width,
                     child: Row(
@@ -344,14 +444,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    //4.15 Liberar los controladores
+    //Liberar controladores
     _emailCtrl.dispose();
     _passCtrl.dispose();
-    //2.4 Liberar el foco
+
+    //Liberar FocusNodes
     _emailFocus.dispose();
     _passWordFocus.dispose();
-    _typingDebounce?.cancel(); //3.8 Cancelar el timer al salir
-    _lockTimer?.cancel(); //5.12 Cancelar el timer del bloqueo
+
+    //Cancelar timer
+    _typingDebounce?.cancel();
+
     super.dispose();
   }
 }

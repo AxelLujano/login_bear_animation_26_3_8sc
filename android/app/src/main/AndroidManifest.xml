@@ -1,8 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Permiso necesario para consumir tanto Firebase como nuestra API de Spring Boot -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- usesCleartextTraffic="true" permite peticiones HTTP locales (sin HTTPS) hacia Spring Boot -->
     <application
         android:label="login_bear_animation_26_3_8sc"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
